@@ -73,7 +73,7 @@ Resultado esperado: `auth_token`, `auth_token_wo`, `secret_string` e `secret_str
 
 ### 2.2 Testar conexão ao RDS (`5432`) e ao ElastiCache (`rediss://` na `6379`) a partir de um pod no EKS
 
-Como os Security Groups `secgrp-rds-oficina-mecanica-work-order` e `secgrp-cache-oficina-mecanica-work-order` aceitam tráfego apenas a partir do Security Group de identidade dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`, mais a regra provisória das subnets privadas no RDS até a C-20), o teste de conectividade deve partir de um pod no cluster:
+Como os Security Groups `secgrp-rds-oficina-mecanica-work-order` e `secgrp-cache-oficina-mecanica-work-order` aceitam tráfego apenas a partir do Security Group de identidade dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`, mais a regra provisória das subnets privadas no RDS para a Lambda de autenticação), o teste de conectividade deve partir de um pod no cluster:
 
 ```bash
 # 1. Obter os endpoints e o token da sessão atual via AWS CLI
@@ -175,7 +175,7 @@ terraform destroy -auto-approve
 
 ### 4.4 `This object does not have an attribute named eks_nodes_security_group_id`
 
-- **Causa:** o state de `oficina-mecanica-infra-base` no S3 ainda foi gerado antes da change C-02, que exporta o Security Group de identidade dos nós do EKS (`eks_nodes_security_group_id`).
+- **Causa:** o state de `oficina-mecanica-infra-base` no S3 foi gerado por uma versão que ainda não exportava o Security Group de identidade dos nós do EKS (`eks_nodes_security_group_id`).
 - **Correção:** executar o CD (ou `terraform apply`) de `oficina-mecanica-infra-base` na `main` antes de rodar o `plan`/`apply` deste repositório.
 
 Voltar ao [README](../README.md).
