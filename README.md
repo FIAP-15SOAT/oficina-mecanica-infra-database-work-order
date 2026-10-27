@@ -26,7 +26,7 @@ Faz parte do ecossistema de serviços e infraestrutura da pós-graduação em Ar
 1. **Amazon RDS PostgreSQL 18 (`rds.tf` e `secrets.tf`)**:
    - Instância gerenciada `rds-oficina-mecanica-work-order` (`rds-${var.project_name}-${var.service_context}`), engine `postgres` na major **18** (`db_engine_version = "18"`, com `auto_minor_version_upgrade = true`), **Single-AZ** (`multi_az = false`) e classe **`db.t4g.micro`**.
    - Armazenamento **20 GiB GP3** criptografado em repouso (`storage_encrypted = true`), sem margem de crescimento automático nos defaults (`db_max_allocated_storage = 20`).
-   - Acesso exclusivamente privado (`publicly_accessible = false`) no subnet group `dbsng-oficina-mecanica-work-order` nas subnets privadas da VPC; porta `5432`, banco inicial e master username `techchallenge`.
+   - Acesso exclusivamente privado (`publicly_accessible = false`) no subnet group `dbsng-oficina-mecanica-work-order` nas subnets privadas da VPC; porta `5432`, banco inicial `work_order` e master username `oficina`.
    - Master password gerenciada pelo próprio RDS no AWS Secrets Manager (`manage_master_user_password = true`) com rotação automática desabilitada (`aws_secretsmanager_secret_rotation` com `rotation_enabled = false`, ver [ADR 0003](docs/adr/0003-master-password-gerenciada-pelo-rds.md)).
    - Sem retenção de backups automáticos (`backup_retention_period = 0`), `skip_final_snapshot = true` e `deletion_protection = false` para recriação rápida a cada sessão do AWS Academy Learner Lab.
 
@@ -166,8 +166,8 @@ O disparo manual do CD também precisa selecionar `main`. Consulte [CI/CD](docs/
 | `db_instance_class` | `string` | `db.t4g.micro` | Classe da instância RDS | Define a capacidade de CPU e memória da instância RDS. |
 | `db_allocated_storage` | `number` | `20` | Armazenamento inicial (GiB) | Define a capacidade inicial do volume `gp3` criptografado do RDS. |
 | `db_max_allocated_storage` | `number` | `20` | Teto de armazenamento (GiB) | Igual ao inicial para desabilitar autoscaling de disco no laboratório. |
-| `db_name` | `string` | `techchallenge` | Nome inicial do banco | Cria o banco inicial no RDS e fornece o output `db_name`. |
-| `db_username` | `string` | `techchallenge` | Master username do RDS | Define o usuário mestre do RDS cuja senha é gerenciada no Secrets Manager. |
+| `db_name` | `string` | `work_order` | Nome inicial do banco | Cria o banco inicial no RDS e fornece o output `db_name`. |
+| `db_username` | `string` | `oficina` | Master username do RDS | Define o usuário mestre do RDS cuja senha é gerenciada no Secrets Manager. |
 | `db_port` | `number` | `5432` | Porta do PostgreSQL | Configura a porta da instância RDS e as regras de entrada 5432 do `secgrp_rds`. |
 | `multi_az` | `bool` | `false` | Habilita Multi-AZ | Mantém a instância RDS em Single-AZ para economia de créditos no laboratório. |
 | `backup_retention_period` | `number` | `0` | Retenção de backups (dias) | `0` desabilita backups automatizados no laboratório. |
@@ -187,7 +187,7 @@ Nenhum output expõe senha, token ou URL de conexão. O CD do `work-order` desco
 | `db_host` | Endereço DNS do host do RDS | `rds-oficina-mecanica-work-order.xxxx.us-east-1.rds.amazonaws.com` | Preenche `DATABASE_HOST` da Lambda `customer-auth` via remote state até a C-20. |
 | `db_address` | Alias para `db_host` | `rds-oficina-mecanica-work-order.xxxx.us-east-1.rds.amazonaws.com` | Mantido por compatibilidade de contrato com os outputs anteriores. |
 | `db_port` | Porta do PostgreSQL | `5432` | Preenche `DATABASE_PORT` da Lambda via remote state até a C-20. |
-| `db_name` | Nome inicial do banco | `techchallenge` | Preenche `DATABASE_NAME` da Lambda via remote state até a C-20. |
+| `db_name` | Nome inicial do banco | `work_order` | Preenche `DATABASE_NAME` da Lambda via remote state até a C-20. |
 | `db_security_group_id` | ID do Security Group do RDS | `sg-0123456789abcdef0` | Inspecionar as regras de entrada do RDS (`secgrp-rds-oficina-mecanica-work-order`). |
 | `db_credentials_secret_arn` | ARN do Secret gerenciado pelo RDS | — | Preenche `DATABASE_SECRET_ID` da Lambda via remote state até a C-20. |
 | `cache_primary_endpoint` | Endpoint primário do ElastiCache for Valkey | `master.cache-oficina-mecanica-work-order.xxxx.use1.cache.amazonaws.com` | Endereço DNS primário para conexões `rediss://` ao Valkey. |
