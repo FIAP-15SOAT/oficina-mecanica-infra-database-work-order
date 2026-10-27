@@ -36,7 +36,7 @@ Faz parte do ecossistema de serviços e infraestrutura da pós-graduação em Ar
    - **Senha fora do state ([ADR 0005](docs/adr/0005-elasticache-com-tls-e-senha-fora-do-state.md))**: um recurso efêmero `ephemeral "aws_secretsmanager_random_password"` gera uma senha de 64 caracteres sem pontuação durante o apply; o valor é aplicado ao ElastiCache por `auth_token_wo` (`auth_token_wo_version = 1`) e gravado no secret `cache-oficina-mecanica-work-order-auth-token` (`recovery_window_in_days = 0`) por `secret_string_wo` (`secret_string_wo_version = 1`). Nenhuma senha ou token entra no `terraform.tfstate` nem aparece no `plan`.
 
 3. **Security Groups restritos aos nós do EKS (`security_group.tf`)**:
-   - `secgrp-rds-oficina-mecanica-work-order`: libera entrada TCP `5432` a partir do Security Group de identidade dos nós do EKS (`eks_nodes_security_group_id`, lido do state da `infra-base`) e, **provisoriamente até a C-20**, a partir dos CIDRs das subnets privadas (obtidos via `data "aws_subnet"` sobre `private_subnet_ids`) para que a [Lambda `customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) continue autenticando clientes enquanto não migra para o `identity-service`. Sem regras de saída (`egress`).
+   - `secgrp-rds-oficina-mecanica-work-order`: libera entrada TCP `5432` a partir do Security Group de identidade dos nós do EKS (`eks_nodes_security_group_id`, lido do state da `infra-base`) e, **provisoriamente**, a partir dos CIDRs das subnets privadas (obtidos via `data "aws_subnet"` sobre `private_subnet_ids`) para que a [Lambda `customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) continue autenticando clientes enquanto não migra para o `identity-service`. Sem regras de saída (`egress`).
    - `secgrp-cache-oficina-mecanica-work-order`: libera entrada TCP `6379` exclusivamente a partir de `eks_nodes_security_group_id`, sem regra por CIDR e sem regras de saída (`egress`).
 
 ![Arquitetura da infraestrutura de dados do Work Order](docs/diagrams/infrastructure.png)
@@ -45,7 +45,7 @@ Faz parte do ecossistema de serviços e infraestrutura da pós-graduação em Ar
 
 - O [serviço Work Order](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service) descobre a instância RDS pelo identificador fixo `rds-oficina-mecanica-work-order` (`RDS_INSTANCE_IDENTIFIER`) e o cache pelo identificador fixo `cache-oficina-mecanica-work-order` e pelo secret `cache-oficina-mecanica-work-order-auth-token` durante o CD, materializando os Secrets Kubernetes no namespace `work-order` sem ler o state deste repositório.
 - O job `db-migrate` do **CD do Work Order** executa `prisma migrate deploy` dentro do EKS antes de `app-deploy`. Este Terraform provisiona o RDS e o ElastiCache, mas não cria tabelas nem executa migrations.
-- Até a C-20, a [Lambda de autenticação de clientes](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) lê `db_host`, `db_port`, `db_name` e `db_credentials_secret_arn` pelo remote state na chave `infra/prod-simulated/infra-database-work-order/terraform.tfstate`.
+- Enquanto não migra para o `identity-service`, a [Lambda de autenticação de clientes](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) lê `db_host`, `db_port`, `db_name` e `db_credentials_secret_arn` pelo remote state na chave `infra/prod-simulated/infra-database-work-order/terraform.tfstate`.
 
 ---
 
@@ -177,19 +177,19 @@ O disparo manual do CD também precisa selecionar `main`. Consulte [CI/CD](docs/
 
 ### Saídas Exportadas (Outputs)
 
-Nenhum output expõe senha, token ou URL de conexão. O CD do `work-order` descobre RDS, ElastiCache e secrets diretamente na AWS pelos identificadores fixos; até a C-20, a Lambda `customer-auth` lê `db_host`, `db_port`, `db_name` e `db_credentials_secret_arn` deste state.
+Nenhum output expõe senha, token ou URL de conexão. O CD do `work-order` descobre RDS, ElastiCache e secrets diretamente na AWS pelos identificadores fixos; enquanto não migra para o `identity-service`, a Lambda `customer-auth` lê `db_host`, `db_port`, `db_name` e `db_credentials_secret_arn` deste state.
 
 | Output | Descrição | Exemplo | Uso |
 | --- | --- | --- | --- |
 | `db_instance_id` | Identificador da instância RDS | `rds-oficina-mecanica-work-order` | Localizar a instância RDS no console e na AWS CLI. |
 | `db_instance_arn` | ARN da instância RDS | — | Referenciar a instância RDS em consultas e auditorias. |
 | `db_endpoint` | Host e porta combinados do RDS | `rds-oficina-mecanica-work-order.xxxx.us-east-1.rds.amazonaws.com:5432` | Referência operacional `host:porta` da instância PostgreSQL. |
-| `db_host` | Endereço DNS do host do RDS | `rds-oficina-mecanica-work-order.xxxx.us-east-1.rds.amazonaws.com` | Preenche `DATABASE_HOST` da Lambda `customer-auth` via remote state até a C-20. |
+| `db_host` | Endereço DNS do host do RDS | `rds-oficina-mecanica-work-order.xxxx.us-east-1.rds.amazonaws.com` | Preenche `DATABASE_HOST` da Lambda `customer-auth` via remote state. |
 | `db_address` | Alias para `db_host` | `rds-oficina-mecanica-work-order.xxxx.us-east-1.rds.amazonaws.com` | Mantido por compatibilidade de contrato com os outputs anteriores. |
-| `db_port` | Porta do PostgreSQL | `5432` | Preenche `DATABASE_PORT` da Lambda via remote state até a C-20. |
-| `db_name` | Nome inicial do banco | `work_order` | Preenche `DATABASE_NAME` da Lambda via remote state até a C-20. |
+| `db_port` | Porta do PostgreSQL | `5432` | Preenche `DATABASE_PORT` da Lambda via remote state. |
+| `db_name` | Nome inicial do banco | `work_order` | Preenche `DATABASE_NAME` da Lambda via remote state. |
 | `db_security_group_id` | ID do Security Group do RDS | `sg-0123456789abcdef0` | Inspecionar as regras de entrada do RDS (`secgrp-rds-oficina-mecanica-work-order`). |
-| `db_credentials_secret_arn` | ARN do Secret gerenciado pelo RDS | — | Preenche `DATABASE_SECRET_ID` da Lambda via remote state até a C-20. |
+| `db_credentials_secret_arn` | ARN do Secret gerenciado pelo RDS | — | Preenche `DATABASE_SECRET_ID` da Lambda via remote state. |
 | `cache_primary_endpoint` | Endpoint primário do ElastiCache for Valkey | `master.cache-oficina-mecanica-work-order.xxxx.use1.cache.amazonaws.com` | Endereço DNS primário para conexões `rediss://` ao Valkey. |
 | `cache_port` | Porta do ElastiCache for Valkey | `6379` | Porta TCP/TLS do replication group Valkey. |
 | `cache_auth_token_secret_name` | Nome do Secret com o auth token do cache | `cache-oficina-mecanica-work-order-auth-token` | Identificador do Secret lido pelo CD do serviço para montar `REDIS_URL`. |
