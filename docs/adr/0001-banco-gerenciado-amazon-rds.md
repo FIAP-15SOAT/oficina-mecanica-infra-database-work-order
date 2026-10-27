@@ -12,7 +12,7 @@ O ambiente é `prod-simulated` em conta AWS Academy, com orçamento limitado e i
 
 ## Decisão
 
-Provisionar o PostgreSQL como um serviço **totalmente gerenciado pela AWS**: **Amazon RDS**, versão do engine `18` (anteriormente `16.9`; atualizado na Fase 4 porque a minor `16.9` encerra o suporte padrão em 2026-10-31, enquanto a major `18` tem suporte padrão até 2031-02-28 e é suportada pelo Prisma 7), instância `db.t4g.micro`, `20 GiB` de armazenamento GP3 com criptografia em repouso (`storage_encrypted = true`), **fora do cluster Kubernetes**, nas subnets privadas da VPC provisionada por `oficina-mecanica-infra-base`. O acesso na porta `5432` é restrito por Security Group dedicado (`secgrp-rds-oficina-mecanica-work-order`) ao Security Group de identidade dos nós do EKS (`eks_nodes_security_group_id`) — além da regra provisória das subnets privadas para a Lambda de autenticação até a C-20 —, sem acesso público (`publicly_accessible = false`).
+Provisionar o PostgreSQL como um serviço **totalmente gerenciado pela AWS**: **Amazon RDS**, versão do engine `18` (anteriormente `16.9`; atualizado na Fase 4 porque a minor `16.9` encerra o suporte padrão em 2026-10-31, enquanto a major `18` tem suporte padrão até 2031-02-28 e é suportada pelo Prisma 7), instância `db.t4g.micro`, `20 GiB` de armazenamento GP3 com criptografia em repouso (`storage_encrypted = true`), **fora do cluster Kubernetes**, nas subnets privadas da VPC provisionada por `oficina-mecanica-infra-base`. O acesso na porta `5432` é restrito por Security Group dedicado (`secgrp-rds-oficina-mecanica-work-order`) ao Security Group de identidade dos nós do EKS (`eks_nodes_security_group_id`) — além da regra provisória das subnets privadas para a Lambda de autenticação, enquanto ela não migra para o `identity-service` —, sem acesso público (`publicly_accessible = false`).
 
 Dado o orçamento de laboratório, a instância é deliberadamente **Single-AZ** (`multi_az = false`), sem backups automatizados (`backup_retention_period = 0`) e sem margem de autoscaling de armazenamento (`db_max_allocated_storage` igual a `db_allocated_storage`, o que desabilita o crescimento automático).
 
@@ -60,7 +60,7 @@ Ofereceria melhor elasticidade (Aurora Serverless v2 escala capacidade automatic
 ### Riscos mitigados
 
 - **Perda de dados por reagendamento de pod (risco da fase anterior)**: eliminado por o banco viver fora do cluster, num serviço gerenciado com armazenamento persistente de verdade.
-- **Acesso não autorizado à rede do banco**: mitigado pelo Security Group restringindo a porta `5432` ao Security Group de identidade dos nós do EKS (e provisoriamente às subnets privadas até a C-20) e por `publicly_accessible = false`.
+- **Acesso não autorizado à rede do banco**: mitigado pelo Security Group restringindo a porta `5432` ao Security Group de identidade dos nós do EKS (e provisoriamente às subnets privadas, para a Lambda de autenticação) e por `publicly_accessible = false`.
 
 ## Referências
 

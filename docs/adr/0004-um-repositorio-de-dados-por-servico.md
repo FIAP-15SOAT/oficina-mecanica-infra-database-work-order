@@ -12,7 +12,7 @@ Na Fase 4, a solução foi dividida em quatro microsserviços independentes (`wo
 
 1. como organizar os repositórios e os states Terraform de dados dos quatro serviços;
 2. como parametrizar a configuração para que os quatro repositórios mantenham o mesmo desenho sem duplicação ad-hoc;
-3. como restringir o acesso de rede no nível de Security Group apenas aos nós do cluster EKS (e, transitoriamente até a C-20, à Lambda `customer-auth` no banco do `work-order`).
+3. como restringir o acesso de rede no nível de Security Group apenas aos nós do cluster EKS (e, transitoriamente, à Lambda `customer-auth` no banco do `work-order`).
 
 ## Decisão
 
@@ -34,7 +34,7 @@ Na Fase 4, a solução foi dividida em quatro microsserviços independentes (`wo
 
 3. **Security Groups restritos ao Security Group de identidade dos nós do EKS**:
    - Declarar as regras de entrada inline nos próprios `aws_security_group` deste repositório (`secgrp_rds` na porta `5432` e `secgrp_cache` na porta `6379`) aceitando tráfego exclusivamente a partir de `eks_nodes_security_group_id` (`secgrp-eks-nodes-oficina-mecanica`), lido do remote state do `oficina-mecanica-infra-base`, sem regras de saída (`egress`).
-   - Apenas neste repositório (`work-order`), manter um segundo bloco `ingress` provisório na porta `5432` do `secgrp_rds` a partir dos CIDRs das subnets privadas (obtidos via `data "aws_subnet"` sobre `private_subnet_ids` do `infra-base`), para que a Lambda `customer-auth` continue autenticando clientes até que a C-20 migre o fluxo para o `identity-service`.
+   - Apenas neste repositório (`work-order`), manter um segundo bloco `ingress` provisório na porta `5432` do `secgrp_rds` a partir dos CIDRs das subnets privadas (obtidos via `data "aws_subnet"` sobre `private_subnet_ids` do `infra-base`), para que a Lambda `customer-auth` continue autenticando clientes até que o fluxo migre para o `identity-service`.
 
 4. **Outputs escalares estáveis**:
    - Manter os 9 outputs `db_*` (`db_instance_id`, `db_instance_arn`, `db_endpoint`, `db_host`, `db_address`, `db_port`, `db_name`, `db_security_group_id`, `db_credentials_secret_arn`) e adicionar os 4 outputs escalares do cache (`cache_primary_endpoint`, `cache_port`, `cache_auth_token_secret_name`, `cache_security_group_id`), sem expor senha, token ou URL de conexão.
@@ -54,12 +54,12 @@ Na Fase 4, a solução foi dividida em quatro microsserviços independentes (`wo
   - Isolamento completo de state, pipeline e credenciais por bounded context.
   - Os 4 repositórios de dados sobem e são destruídos em paralelo logo após o `infra-base`, sem esperar o cluster EKS.
   - O CD de cada serviço descobre apenas o RDS (`rds-oficina-mecanica-<contexto>`) e o ElastiCache (`cache-oficina-mecanica-<contexto>`) do próprio contexto pelos identificadores fixos.
-  - Nenhum recurso na VPC fora dos nós do EKS alcança o cache (e, após a C-20, o RDS).
+  - Nenhum recurso na VPC fora dos nós do EKS alcança o cache (e, depois que a Lambda deixar de ler este banco, o RDS).
 - **Negativas / Trade-offs**:
   - Mudanças estruturais nos arquivos Terraform precisam ser replicadas nos 4 repositórios de dados, mitigado pelo uso de `service_context` como única variável que muda entre eles.
-  - Até a C-20, qualquer ENI nas subnets privadas alcança a porta `5432` do RDS do `work-order` pela regra provisória (ainda assim mais restrita que o CIDR inteiro da VPC e protegida pela senha do RDS).
+  - Enquanto a regra provisória existir, qualquer ENI nas subnets privadas alcança a porta `5432` do RDS do `work-order` pela regra provisória (ainda assim mais restrita que o CIDR inteiro da VPC e protegida pela senha do RDS).
 
 ## Revisar se
 
-- A C-20 (`decommission-customer-auth-lambda`) for concluída: remover o bloco `ingress` provisório das subnets privadas e o `data "aws_subnet" "private"` em `terraform/security_group.tf`.
+- A autenticação de clientes migrar para o `identity-service` e a Lambda `customer-auth` deixar de ler este banco: remover o bloco `ingress` provisório das subnets privadas e o `data "aws_subnet" "private"` em `terraform/security_group.tf`.
 - O número de repositórios de dados crescer além dos 4 contextos atuais e a manutenção das cópias justificar a extração de um módulo Terraform versionado.
