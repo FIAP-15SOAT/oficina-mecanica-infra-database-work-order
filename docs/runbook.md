@@ -73,7 +73,7 @@ Resultado esperado: `auth_token`, `auth_token_wo`, `secret_string` e `secret_str
 
 ### 2.2 Testar conexão ao RDS (`5432`) e ao ElastiCache (`rediss://` na `6379`) a partir de um pod no EKS
 
-Como os Security Groups `secgrp-rds-oficina-mecanica-work-order` e `secgrp-cache-oficina-mecanica-work-order` aceitam tráfego apenas a partir do Security Group de identidade dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`, mais a regra provisória das subnets privadas no RDS para a Lambda de autenticação), o teste de conectividade deve partir de um pod no cluster:
+Como os Security Groups `secgrp-rds-oficina-mecanica-work-order` e `secgrp-cache-oficina-mecanica-work-order` aceitam tráfego apenas a partir do Security Group de identidade dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`), o teste de conectividade deve partir de um pod no cluster:
 
 ```bash
 # 1. Obter os endpoints e o token da sessão atual via AWS CLI
@@ -122,7 +122,7 @@ kubectl run pg-verify --rm -i --restart=Never -n work-order \
 
 ## 3. Derrubada (Encerramento da sessão)
 
-Destrua os recursos deste repositório **depois** de encerrar ou remover as Lambdas e workloads dependentes e **antes** de destruir `oficina-mecanica-infra-base` (caso contrário, a remoção das subnets privadas e do `secgrp-eks-nodes-oficina-mecanica` na `infra-base` falhará por `DependencyViolation`):
+Destrua os recursos deste repositório **depois** de encerrar ou remover os workloads dependentes no cluster EKS e **antes** de destruir `oficina-mecanica-infra-base` (caso contrário, a remoção das subnets privadas e do `secgrp-eks-nodes-oficina-mecanica` na `infra-base` falhará por `DependencyViolation`):
 
 ```bash
 # Entrar no diretório Terraform e inicializar o backend remoto

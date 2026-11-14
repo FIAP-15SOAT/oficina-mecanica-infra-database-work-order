@@ -4,6 +4,8 @@
 
 Aceito — 2026-10-23
 
+Atualizado em 2026-11-14: removida a regra provisória de entrada `5432` pelos CIDRs das subnets privadas, que atendia a Lambda `customer-auth` enquanto ela lia este banco; o gatilho de revisão registrado para isso se cumpriu, porque a Lambda passou a verificar a credencial no `identity-service` e o vínculo com o cliente no `work-order`.
+
 ## Contexto
 
 Na Fase 3, a solução tinha uma única API (`oficina-mecanica-work-order-service`, então `oficina-mecanica-api`) e um único repositório Terraform de banco (`oficina-mecanica-infra-database`), que provisionava a instância RDS `rds-oficina-mecanica` com state em `infra/prod-simulated/database/terraform.tfstate` e Security Group aberto para toda a CIDR da VPC.
@@ -12,7 +14,7 @@ Na Fase 4, a solução foi dividida em quatro microsserviços independentes (`wo
 
 1. como organizar os repositórios e os states Terraform de dados dos quatro serviços;
 2. como parametrizar a configuração para que os quatro repositórios mantenham o mesmo desenho sem duplicação ad-hoc;
-3. como restringir o acesso de rede no nível de Security Group apenas aos nós do cluster EKS (e, transitoriamente, à Lambda `customer-auth` no banco do `work-order`).
+3. como restringir o acesso de rede no nível de Security Group apenas aos nós do cluster EKS.
 
 ## Decisão
 
@@ -30,11 +32,10 @@ Na Fase 4, a solução foi dividida em quatro microsserviços independentes (`wo
      - `cachesng-${var.project_name}-${var.service_context}`
      - `secgrp-cache-${var.project_name}-${var.service_context}`
      - `cache-${var.project_name}-${var.service_context}-auth-token`
-   - Os repositórios dos outros três serviços copiam a mesma estrutura e alteram apenas o default de `service_context` e a chave do backend S3 (além de omitir a regra provisória da Lambda).
+   - Os repositórios dos outros três serviços copiam a mesma estrutura e alteram apenas o default de `service_context` e a chave do backend S3.
 
 3. **Security Groups restritos ao Security Group de identidade dos nós do EKS**:
    - Declarar as regras de entrada inline nos próprios `aws_security_group` deste repositório (`secgrp_rds` na porta `5432` e `secgrp_cache` na porta `6379`) aceitando tráfego exclusivamente a partir de `eks_nodes_security_group_id` (`secgrp-eks-nodes-oficina-mecanica`), lido do remote state do `oficina-mecanica-infra-base`, sem regras de saída (`egress`).
-   - Apenas neste repositório (`work-order`), manter um segundo bloco `ingress` provisório na porta `5432` do `secgrp_rds` a partir dos CIDRs das subnets privadas (obtidos via `data "aws_subnet"` sobre `private_subnet_ids` do `infra-base`), para que a Lambda `customer-auth` continue autenticando clientes até que o fluxo migre para o `identity-service`.
 
 4. **Outputs escalares estáveis**:
    - Manter os 9 outputs `db_*` (`db_instance_id`, `db_instance_arn`, `db_endpoint`, `db_host`, `db_address`, `db_port`, `db_name`, `db_security_group_id`, `db_credentials_secret_arn`) e adicionar os 4 outputs escalares do cache (`cache_primary_endpoint`, `cache_port`, `cache_auth_token_secret_name`, `cache_security_group_id`), sem expor senha, token ou URL de conexão.
@@ -46,7 +47,7 @@ Na Fase 4, a solução foi dividida em quatro microsserviços independentes (`wo
 - **Criar um repositório novo para o `work-order` em vez de renomear `oficina-mecanica-infra-database`**: perderia o histórico de commits, os PRs, os checks e a configuração existente de ruleset, environment, secrets e variables no GitHub.
 - **Módulo Terraform compartilhado e versionado entre os 4 repositórios de dados**: introduziria sobrecarga de versionamento e publicação de módulo para quatro stacks pequenas de 9 arquivos; manter `service_context` em `variables.tf` e copiar o template com checklist no PR é mais simples e direto.
 - **Ler o Security Group do cluster no state do `oficina-mecanica-infra-k8s`**: impediria que os 4 repositórios de dados subissem em paralelo com o `infra-k8s` na camada 2 de provisionamento; usar o `eks_nodes_security_group_id` exportado pelo `infra-base` permite o paralelismo.
-- **Regra avulsa (`aws_vpc_security_group_ingress_rule`) no repositório da Lambda ou leitura do SG da Lambda aqui**: declarar a regra fora do repositório dono do SG conflitaria com os blocos `ingress` inline no próximo apply; ler o state da Lambda aqui criaria dependência circular (a Lambda lê o state deste repositório e sobe depois dele).
+- **Declarar a regra provisória da Lambda `customer-auth` (ver Status) como regra avulsa (`aws_vpc_security_group_ingress_rule`) no repositório da Lambda, ou ler o SG da Lambda aqui**: declarar a regra fora do repositório dono do SG conflitaria com os blocos `ingress` inline no próximo apply; ler o state da Lambda aqui criaria dependência circular (a Lambda lia o state deste repositório e subia depois dele).
 
 ## Consequências
 
@@ -54,12 +55,10 @@ Na Fase 4, a solução foi dividida em quatro microsserviços independentes (`wo
   - Isolamento completo de state, pipeline e credenciais por bounded context.
   - Os 4 repositórios de dados sobem e são destruídos em paralelo logo após o `infra-base`, sem esperar o cluster EKS.
   - O CD de cada serviço descobre apenas o RDS (`rds-oficina-mecanica-<contexto>`) e o ElastiCache (`cache-oficina-mecanica-<contexto>`) do próprio contexto pelos identificadores fixos.
-  - Nenhum recurso na VPC fora dos nós do EKS alcança o cache (e, depois que a Lambda deixar de ler este banco, o RDS).
+  - Nenhum recurso na VPC fora dos nós do EKS alcança o RDS nem o cache.
 - **Negativas / Trade-offs**:
   - Mudanças estruturais nos arquivos Terraform precisam ser replicadas nos 4 repositórios de dados, mitigado pelo uso de `service_context` como única variável que muda entre eles.
-  - Enquanto a regra provisória existir, qualquer ENI nas subnets privadas alcança a porta `5432` do RDS do `work-order` pela regra provisória (ainda assim mais restrita que o CIDR inteiro da VPC e protegida pela senha do RDS).
 
 ## Revisar se
 
-- A autenticação de clientes migrar para o `identity-service` e a Lambda `customer-auth` deixar de ler este banco: remover o bloco `ingress` provisório das subnets privadas e o `data "aws_subnet" "private"` em `terraform/security_group.tf`.
 - O número de repositórios de dados crescer além dos 4 contextos atuais e a manutenção das cópias justificar a extração de um módulo Terraform versionado.

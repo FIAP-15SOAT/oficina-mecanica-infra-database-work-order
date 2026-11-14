@@ -4,6 +4,9 @@
 
 Aceito — 2026-09-13
 
+Atualizado em 2026-11-14: a Lambda de autenticação deixou de ler o Secret e o
+remote state.
+
 Substitui o [ADR 0002](0002-credencial-via-variavel-terraform-sensivel.md).
 
 ## Contexto
@@ -32,11 +35,10 @@ Declarar `aws_secretsmanager_secret_rotation` para esse ARN com
 `rotation_enabled = false`. Não há Lambda de rotação nem regra periódica. Uma
 mudança futura nesse lifecycle exige nova decisão coordenada com os consumidores.
 
-O Secret é criado, pertence e acompanha o lifecycle da instância RDS. A Lambda
-de autenticação continua recebendo o ARN pelo remote state e lendo o valor
-diretamente. A API descobre ARN, endpoint, porta, nome do banco e usuário pelo
-RDS durante seu CD, lê `AWSCURRENT`, monta `DATABASE_URL` e a materializa no
-Secret Kubernetes `database-credentials` antes das migrations e do rollout.
+O Secret é criado, pertence e acompanha o lifecycle da instância RDS. A API
+descobre ARN, endpoint, porta, nome do banco e usuário pelo RDS durante seu CD,
+lê `AWSCURRENT`, monta `DATABASE_URL` e a materializa no Secret Kubernetes
+`database-credentials` antes das migrations e do rollout.
 
 ## State e dados sensíveis
 
@@ -64,9 +66,9 @@ continuaria exigindo publicação e lifecycle próprios do Secret.
 ### Habilitar rotação automática agora
 
 Rejeitada porque exige Lambda/estratégia de rotação e consumidores preparados
-para refresh/retry sem indisponibilidade. A Lambda atual memoiza sua conexão e
-os Pods recebem a URL no início; esse comportamento não foi alterado nesta
-change.
+para refresh/retry sem indisponibilidade. A Lambda de autenticação, então
+consumidora, memoizava sua conexão, e os Pods recebem a URL no início; esse
+comportamento não foi alterado nesta change.
 
 ### Entregar o Secret diretamente aos Pods com ESO ou Secrets Store CSI/ASCP
 
@@ -87,8 +89,8 @@ produzido pela configuração nova.
 ## Consequências
 
 **Positivas.** A senha deixa de circular pelo GitHub e Terraform; RDS e Secrets
-Manager mantêm uma única origem de verdade; o output cross-repo permanece
-estável; e campos adicionais do Secret não quebram os consumidores.
+Manager mantêm uma única origem de verdade; o output permanece estável; e campos
+adicionais do Secret não quebram os consumidores.
 
 **Negativas.** O CD da API passa a depender da disponibilidade das APIs RDS e
 Secrets Manager. O Secret Kubernetes materializa a URL dentro do cluster e deve
