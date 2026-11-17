@@ -28,7 +28,7 @@ Faz parte do ecossistema de serviços e infraestrutura da pós-graduação em Ar
    - Armazenamento **20 GiB GP3** criptografado em repouso (`storage_encrypted = true`), sem margem de crescimento automático nos defaults (`db_max_allocated_storage = 20`).
    - Acesso exclusivamente privado (`publicly_accessible = false`) no subnet group `dbsng-oficina-mecanica-work-order` nas subnets privadas da VPC; porta `5432`, banco inicial `work_order` e master username `oficina`.
    - Master password gerenciada pelo próprio RDS no AWS Secrets Manager (`manage_master_user_password = true`) com rotação automática desabilitada (`aws_secretsmanager_secret_rotation` com `rotation_enabled = false`, ver [ADR 0003](docs/adr/0003-master-password-gerenciada-pelo-rds.md)).
-   - Sem retenção de backups automáticos (`backup_retention_period = 0`), `skip_final_snapshot = true` e `deletion_protection = false` para recriação rápida a cada sessão do AWS Academy Learner Lab.
+   - Sem retenção de backups automáticos (`backup_retention_period = 0`), `skip_final_snapshot = true` e `deletion_protection = false` para recriar a instância rapidamente a cada subida do ambiente.
 
 2. **Amazon ElastiCache for Valkey 9.1 e Secret Write-Only (`elasticache.tf`)**:
    - Replication group `cache-oficina-mecanica-work-order` (`cache-${var.project_name}-${var.service_context}`) com `engine = "valkey"`, `engine_version = "9.1"`, 1 nó `cache.t4g.micro` (`num_cache_clusters = 1`, `automatic_failover_enabled = false`), porta `6379`, no subnet group `cachesng-oficina-mecanica-work-order` nas subnets privadas.
@@ -68,8 +68,7 @@ Faz parte do ecossistema de serviços e infraestrutura da pós-graduação em Ar
 │   │   ├── cd-workflow.png  # Job e steps do workflow de CD
 │   │   ├── ci-workflow.png  # Jobs e steps do workflow de CI
 │   │   └── infrastructure.png  # Arquitetura do RDS, ElastiCache, SGs e secrets
-│   ├── ci-cd.md  # Jobs, steps, conditions e diagramas de CI/CD
-│   └── runbook.md  # Subida, verificação pós-apply, derrubada e falhas conhecidas
+│   └── ci-cd.md  # Jobs, steps, conditions e diagramas de CI/CD
 ├── terraform/
 │   ├── .terraform.lock.hcl  # Versões e checksums dos providers (aws >= 6.62.0)
 │   ├── backend.tf  # Backend S3 e lock nativo na chave infra-database-work-order
@@ -132,9 +131,9 @@ Para a execução automatizada dos pipelines de CI e CD, configure os seguintes 
 
 | Secret | Nível | Descrição |
 |---|---|---|
-| `AWS_ACCESS_KEY_ID` | Organização | Access Key temporária do AWS Academy / Learner Lab |
-| `AWS_SECRET_ACCESS_KEY` | Organização | Secret Access Key do AWS Academy |
-| `AWS_SESSION_TOKEN` | Organização | Token temporário de sessão do AWS Academy |
+| `AWS_ACCESS_KEY_ID` | Organização | Access key das credenciais AWS temporárias |
+| `AWS_SECRET_ACCESS_KEY` | Organização | Secret access key das mesmas credenciais |
+| `AWS_SESSION_TOKEN` | Organização | Session token das mesmas credenciais |
 | `BOT_PRIVATE_KEY` | Organização | Chave privada (`.pem`) do GitHub App para abertura automática de PRs |
 
 ### Variáveis do GitHub (`Settings > Secrets and variables > Actions > Variables`)
@@ -145,7 +144,7 @@ Para a execução automatizada dos pipelines de CI e CD, configure os seguintes 
 | `TF_STATE_BUCKET` | Organização | — | Nome do bucket S3 de state; vai ao `terraform init` por `-backend-config` e a `TF_VAR_aws_base_state_bucket` |
 | `ENABLE_DEPLOY` | Repositório | `true` / `false` | Habilita a execução automática do job `Terraform Database` no workflow de CD ao fazer push na `main` |
 
-O disparo manual do CD também precisa selecionar `main`. Consulte [CI/CD](docs/ci-cd.md) para as conditions e steps completos e o [Runbook](docs/runbook.md) para procedimentos operacionais.
+O disparo manual do CD também precisa selecionar `main`. Consulte [CI/CD](docs/ci-cd.md) para as conditions e steps completos.
 
 ---
 
@@ -165,12 +164,12 @@ O disparo manual do CD também precisa selecionar `main`. Consulte [CI/CD](docs/
 | `db_engine_version` | `string` | `18` | Versão major do PostgreSQL | Preenche `engine_version` da instância RDS PostgreSQL. |
 | `db_instance_class` | `string` | `db.t4g.micro` | Classe da instância RDS | Define a capacidade de CPU e memória da instância RDS. |
 | `db_allocated_storage` | `number` | `20` | Armazenamento inicial (GiB) | Define a capacidade inicial do volume `gp3` criptografado do RDS. |
-| `db_max_allocated_storage` | `number` | `20` | Teto de armazenamento (GiB) | Igual ao inicial para desabilitar autoscaling de disco no laboratório. |
+| `db_max_allocated_storage` | `number` | `20` | Teto de armazenamento (GiB) | Igual ao inicial para desabilitar o crescimento automático do disco e manter o custo previsível. |
 | `db_name` | `string` | `work_order` | Nome inicial do banco | Cria o banco inicial no RDS e fornece o output `db_name`. |
 | `db_username` | `string` | `oficina` | Master username do RDS | Define o usuário mestre do RDS cuja senha é gerenciada no Secrets Manager. |
 | `db_port` | `number` | `5432` | Porta do PostgreSQL | Configura a porta da instância RDS e as regras de entrada 5432 do `secgrp_rds`. |
-| `multi_az` | `bool` | `false` | Habilita Multi-AZ | Mantém a instância RDS em Single-AZ para economia de créditos no laboratório. |
-| `backup_retention_period` | `number` | `0` | Retenção de backups (dias) | `0` desabilita backups automatizados no laboratório. |
+| `multi_az` | `bool` | `false` | Habilita Multi-AZ | Mantém a instância RDS numa única zona de disponibilidade (Single-AZ) para reduzir o custo. |
+| `backup_retention_period` | `number` | `0` | Retenção de backups (dias) | `0` desabilita os backups automáticos, porque o ambiente é recriado a cada subida. |
 | `skip_final_snapshot` | `bool` | `true` | Pula snapshot final no destroy | Permite destruir a instância RDS sem gerar snapshot final. |
 
 ---
@@ -202,18 +201,18 @@ Nenhum output expõe senha, token ou URL de conexão. Nenhum outro repositório 
 ### Pré-requisitos
 
 - **Terraform ≥ 1.11.0** e **AWS provider ≥ 6.62.0 e < 7.0.0** (necessários para `ephemeral` e argumentos write-only `auth_token_wo` e `secret_string_wo`).
-- **AWS CLI v2** configurada com as credenciais temporárias da sessão ativa do AWS Academy Learner Lab.
-- `oficina-mecanica-infra-base` previamente aplicada na mesma sessão (exportando `vpc_id`, `private_subnet_ids` e `eks_nodes_security_group_id`).
+- **AWS CLI v2** configurada com as credenciais AWS.
+- `oficina-mecanica-infra-base` previamente aplicada na mesma conta (exportando `vpc_id`, `private_subnet_ids` e `eks_nodes_security_group_id`).
 
 ### Passos para Inicialização e Deploy
 
-Na raiz do repositório, com sessão AWS ativa:
+Na raiz do repositório, com as credenciais AWS configuradas:
 
 ```bash
 # 1. Acessar o diretório da configuração Terraform
 cd terraform
 
-# 2. Definir o bucket S3 de state da sessão atual do Learner Lab
+# 2. Definir o bucket S3 de state (o valor da variável TF_STATE_BUCKET da organização)
 export TF_STATE_BUCKET=<nome-do-bucket>
 
 # 3. Exportar a variável consumida pelo data source do remote state da infra-base
@@ -238,7 +237,7 @@ terraform apply
 terraform output
 ```
 
-### Validação estática, sem sessão AWS ativa
+### Validação estática, sem credenciais AWS
 
 Na pasta `terraform/`, sem conectar ao backend S3 ou à conta AWS:
 
@@ -253,7 +252,54 @@ terraform init -backend=false
 terraform validate
 ```
 
-### Encerramento do laboratório
+### Teste de conexão a partir do cluster
+
+Como os Security Groups `secgrp-rds-oficina-mecanica-work-order` e `secgrp-cache-oficina-mecanica-work-order` aceitam tráfego apenas a partir do Security Group de identidade dos nós do EKS, o cluster Kubernetes da solução (`secgrp-eks-nodes-oficina-mecanica`), o teste parte de um pod efêmero no cluster, removido ao terminar. Antes, aponte o `kubectl` para o cluster com `aws eks update-kubeconfig --name eks-oficina-mecanica --region us-east-1`:
+
+```bash
+# 1. Obter os endpoints, a senha do banco e o token do cache pela AWS CLI
+RDS_HOST=$(aws rds describe-db-instances \
+  --db-instance-identifier rds-oficina-mecanica-work-order \
+  --query 'DBInstances[0].Endpoint.Address' --output text)
+
+RDS_SECRET_ARN=$(aws rds describe-db-instances \
+  --db-instance-identifier rds-oficina-mecanica-work-order \
+  --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
+
+RDS_PASS=$(aws secretsmanager get-secret-value \
+  --secret-id "$RDS_SECRET_ARN" \
+  --query 'SecretString' --output text | jq -r '.password')
+
+CACHE_HOST=$(aws elasticache describe-replication-groups \
+  --replication-group-id cache-oficina-mecanica-work-order \
+  --query 'ReplicationGroups[0].NodeGroups[0].PrimaryEndpoint.Address' --output text)
+
+CACHE_TOKEN=$(aws secretsmanager get-secret-value \
+  --secret-id cache-oficina-mecanica-work-order-auth-token \
+  --query 'SecretString' --output text)
+
+# 2. Testar PING com TLS + senha no ElastiCache for Valkey a partir de um pod efêmero no namespace work-order (esperado: PONG)
+kubectl run valkey-verify --rm -i --restart=Never -n work-order \
+  --image=valkey/valkey:9.1-alpine \
+  --env="CACHE_HOST=$CACHE_HOST" \
+  --env="CACHE_TOKEN=$CACHE_TOKEN" \
+  -- sh -c 'valkey-cli --tls -h "$CACHE_HOST" -p 6379 -a "$CACHE_TOKEN" --no-auth-warning PING'
+
+# 3. Confirmar que conexão sem senha no ElastiCache é recusada (esperado: NOAUTH Authentication required)
+kubectl run valkey-noauth --rm -i --restart=Never -n work-order \
+  --image=valkey/valkey:9.1-alpine \
+  --env="CACHE_HOST=$CACHE_HOST" \
+  -- sh -c 'valkey-cli --tls -h "$CACHE_HOST" -p 6379 PING'
+
+# 4. Testar consulta SQL no RDS PostgreSQL 18 a partir de um pod efêmero no namespace work-order
+kubectl run pg-verify --rm -i --restart=Never -n work-order \
+  --image=postgres:18-alpine \
+  --env="PGPASSWORD=$RDS_PASS" \
+  --env="RDS_HOST=$RDS_HOST" \
+  -- psql -h "$RDS_HOST" -U oficina -d work_order -c "SELECT version();"
+```
+
+### Derrubada
 
 - Remova primeiro os workloads dependentes no cluster EKS.
 - Destrua este repositório antes de destruir `oficina-mecanica-infra-base`:
@@ -266,7 +312,7 @@ terraform plan -destroy
 terraform destroy
 ```
 
-Consulte o [Runbook operacional](docs/runbook.md) para os comandos de verificação pós-apply (`terraform state pull` sem senha e testes `psql` / `valkey-cli --tls` a partir de um pod no EKS) e diagnóstico de falhas conhecidas.
+A subida e a derrubada do ambiente inteiro, na ordem entre os repositórios, estão no [runbook do `oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base/blob/main/docs/runbook.md), o repositório da rede, que guarda os scripts `environment-up.sh` e `environment-down.sh`.
 
 ---
 
